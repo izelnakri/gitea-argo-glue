@@ -12,14 +12,11 @@ const {
 } = process.env;
 const TARGET_PORT = PORT || 1234;
 const CI_RUNNING_IMAGE =
-  process.env.TESTS_RUNNING_IMAGE ||
-  "https://media.giphy.com/media/8WeatsYCC54TC/giphy.gif";
+  process.env.TESTS_RUNNING_IMAGE || "https://media.giphy.com/media/8WeatsYCC54TC/giphy.gif";
 const CI_SUCCEED_IMAGE =
-  process.env.TESTS_SUCCEED_IMAGE ||
-  "https://media.giphy.com/media/zaqclXyLz3Uoo/giphy.gif";
+  process.env.TESTS_SUCCEED_IMAGE || "https://media.giphy.com/media/zaqclXyLz3Uoo/giphy.gif";
 const CI_FAILED_IMAGE =
-  process.env.TESTS_FAILED_IMAGE ||
-  "https://media.giphy.com/media/li0dswKqIZNpm/giphy.gif";
+  process.env.TESTS_FAILED_IMAGE || "https://media.giphy.com/media/li0dswKqIZNpm/giphy.gif";
 const app = express();
 
 app.use(bodyParser.json());
@@ -88,9 +85,7 @@ app.post("/submit-workflow-result", (req, res) => {
   return res.status(201).end();
 });
 
-app.listen(TARGET_PORT, () =>
-  console.log(`server listening on ${TARGET_PORT}`)
-);
+app.listen(TARGET_PORT, () => console.log(`server listening on ${TARGET_PORT}`));
 
 function sendWorkflowToArgo(res, workflowDetails) {
   const {
@@ -179,14 +174,10 @@ function postCIRunningToPR(workflow, argoResult) {
       }
     )
     .then((result) => {
-      console.log(
-        `CI Running comment posted on ${project}/${branch} PR#${pullRequestNumber}`
-      );
+      console.log(`CI Running comment posted on ${project}/${branch} PR#${pullRequestNumber}`);
     })
     .catch((error) => {
-      console.log(
-        `Error occured during posting CI running comment to PR#${pullRequestNumber}`
-      );
+      console.log(`Error occured during posting CI running comment to PR#${pullRequestNumber}`);
       console.log(error);
     });
 }
@@ -239,9 +230,7 @@ async function getPullRequestNumber(project, branch) {
   );
 
   if (status === 200) {
-    const targetPullRequest = data.find(
-      (pullRequest) => pullRequest.head.ref === branch
-    );
+    const targetPullRequest = data.find((pullRequest) => pullRequest.head.ref === branch);
 
     return targetPullRequest && targetPullRequest.number;
   }
