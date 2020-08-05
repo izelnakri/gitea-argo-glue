@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-argo-glue-deployment
+  namespace: default
+  labels:
+    app: gitea-argo-glue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gitea-argo-glue
+  template:
+    metadata:
+      labels:
+        app: gitea-argo-glue
+    spec:
+      containers:
+        - name: gitea-argo-glue
+          image: inakri/gitea-argo-glue
+          ports:
+            - containerPort: 3000
+          command: ["/usr/local/bin/node"]
+          args: ["/code/server/index.js"]
+          env:
+            - PORT: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea-argo-glue-service
+  namespace: default
+spec:
+  ports:
+  - port: 80
+    targetPort: 3000
+  selector:
+    app: gitea-argo-glue
