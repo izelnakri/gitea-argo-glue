@@ -1,0 +1,61 @@
+version: "2"
+
+networks:
+  gitea:
+    external: false
+
+services:
+  gitea:
+    image: gitea/gitea:latest
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - DB_TYPE=mysql
+      - DB_HOST=db:3306
+      - DB_NAME=gitea
+      - DB_USER=gitea
+      - DB_PASSWD=gitea
+    restart: always
+    networks:
+      - gitea
+    volumes:
+      - ./gitea:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+       - "3000:3000"
+       - "222:22"
+    depends_on:
+      - db
+
+  db:
+    image: mysql:5.7
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=gitea
+      - MYSQL_USER=gitea
+      - MYSQL_PASSWORD=gitea
+      - MYSQL_DATABASE=gitea
+    networks:
+      - gitea
+    volumes:
+      - ./mysql:/var/lib/mysql
+
+  web:
+    image: inakri/argo-glue
+    environment:
+      - PORT=1235
+      - ARGO_SERVER_URL=http://argo.izelnakri.com
+      - ARGO_SERVER_TOKEN=$ARGO_SERVER_TOKEN
+      - GITEA_SERVER_URL=http://gitea:3000
+      - GITEA_SERVER_TOKEN=$GITEA_SERVER_TOKEN
+    restart: always
+    depends_on:
+      - gitea
+    ports:
+       - "1235:1235"
+    command: node /code/server/index.js
+    networks:
+      - gitea
+    volumes:
+      - ./server:/code/server

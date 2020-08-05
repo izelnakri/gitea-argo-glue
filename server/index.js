@@ -3,29 +3,22 @@ import express from "express";
 import bodyParser from "body-parser";
 import Workflow from "./models/workflow.js";
 
-const {
-  ARGO_SERVER_URL,
-  ARGO_SERVER_TOKEN,
-  GITEA_SERVER_URL,
-  GITEA_SERVER_TOKEN,
-  PORT,
-} = process.env;
-const TARGET_PORT = PORT || 1234;
+const { ARGO_SERVER_URL, ARGO_SERVER_TOKEN, GITEA_SERVER_URL, GITEA_SERVER_TOKEN } = process.env;
+const TARGET_PORT = process.env.PORT || 1234;
 const CI_RUNNING_IMAGE =
   process.env.TESTS_RUNNING_IMAGE || "https://media.giphy.com/media/8WeatsYCC54TC/giphy.gif";
 const CI_SUCCEED_IMAGE =
-  process.env.TESTS_SUCCEED_IMAGE || "https://media.giphy.com/media/zaqclXyLz3Uoo/giphy.gif";
+  process.env.TESTS_SUCCEED_IMAGE || "https://media.giphy.com/media/11sBLVxNs7v6WA/giphy.gif";
 const CI_FAILED_IMAGE =
-  process.env.TESTS_FAILED_IMAGE || "https://media.giphy.com/media/li0dswKqIZNpm/giphy.gif";
+  process.env.TESTS_FAILED_IMAGE || "https://media.giphy.com/media/N35rW3vRNeaDC/giphy.gif";
 const app = express();
 
 app.use(bodyParser.json());
 
-// TODO: create k8s deployment
 app.post("/submit-workflow", (req, res) => {
-  const workflowTemplate = req.body.secret || "hello-argo";
   const { repository, ref, commits } = req.body;
   const project = repository.full_name;
+  const workflowTemplate = req.body.secret || "default";
 
   if ("commits" in req.body) {
     const branch = ref.replace("refs/heads/", "");
@@ -33,6 +26,7 @@ app.post("/submit-workflow", (req, res) => {
 
     if (targetCommit) {
       console.log(`Git push to existing repo ${project}/${branch}:`);
+
       return sendWorkflowToArgo(res, {
         workflowTemplate,
         sender: targetCommit.committer.username,
@@ -43,6 +37,7 @@ app.post("/submit-workflow", (req, res) => {
       });
     } else if (isNewBranch(req.body)) {
       console.log(`New branch on ${project}/${branch}:`);
+
       return sendWorkflowToArgo(res, {
         workflowTemplate,
         sender: req.body.username,
@@ -53,17 +48,17 @@ app.post("/submit-workflow", (req, res) => {
       });
     }
   } else if (isNewPullRequest(req.body)) {
-    const targetBranch = req.body.pull_request.head.ref;
+    const branch = req.body.pull_request.head.ref;
 
     console.log(
-      `New pull request on ${project}/${targetBranch} -> ${project}/${req.body.pull_request.base.ref}`
+      `New pull request on ${project}/${branch} -> ${project}/${req.body.pull_request.base.ref}`
     );
 
     return sendWorkflowToArgo(res, {
       workflowTemplate,
       sender: req.body.username,
       project,
-      branch: targetBranch,
+      branch,
       commitHash: req.body.pull_request.head.sha,
       event: "new-pull-request",
       pullRequestNumber: req.body.pull_request.number,
@@ -74,12 +69,12 @@ app.post("/submit-workflow", (req, res) => {
 });
 
 app.post("/submit-workflow-result", (req, res) => {
-  const foundWorkflow = Workflow.findBy({
+  const workflow = Workflow.findBy({
     workflowName: req.body.workflowName,
   });
 
-  if (foundWorkflow && foundWorkflow.pullRequestNumber) {
-    return postCIResultsToPR(res, foundWorkflow, req.body);
+  if (workflow && workflow.pullRequestNumber) {
+    return postCIResultsToPR(res, workflow, req.body);
   }
 
   return res.status(201).end();
@@ -108,7 +103,7 @@ function sendWorkflowToArgo(res, workflowDetails) {
         resourceName: workflowTemplate,
         submitOptions: {
           labels:
-            `workflows.argoproj.io/workflow-template=${workflowTemplate},workflows.argoproj.io/sender=${sender}` +
+            `workflows.argoproj.io/workflow-template=${workflowTemplate},workflows.argoproj.io/creator=${sender}` +
             `,workflows.argoproj.io/project=${projectLabel},workflows.argoproj.io/branch=${branch}` +
             `,workflows.argoproj.io/commit-hash=${commitHash},workflows.argoproj.io/event=${event}`,
         },
@@ -140,10 +135,10 @@ function sendWorkflowToArgo(res, workflowDetails) {
       return postCIRunningToPR(workflow, argoResult);
     })
     .catch((error) => {
-      console.log("Error occured during job submission:");
-      console.log(error);
+      console.error(`Error occured during job submission, HTTP ${error.response.status}:`);
+      console.error(error.response.data);
 
-      return res.status(500).end();
+      return res.status(error.response.status).end();
     });
 }
 
@@ -177,24 +172,24 @@ function postCIRunningToPR(workflow, argoResult) {
       console.log(`CI Running comment posted on ${project}/${branch} PR#${pullRequestNumber}`);
     })
     .catch((error) => {
-      console.log(`Error occured during posting CI running comment to PR#${pullRequestNumber}`);
-      console.log(error);
+      console.error(
+        `Error occured during posting CI running comment to PR#${pullRequestNumber}, HTTP ${error.response.status}`
+      );
+      console.error(error.response.data);
     });
 }
 
 function postCIResultsToPR(res, workflow, requestBody) {
-  const message =
-    requestBody.workflowStatus === "Succeeded"
-      ? `Tests succeeded on ${ARGO_SERVER_URL}/workflows/argo/${requestBody.workflowName} \n\n` +
-        `![Tests running](${CI_SUCCEED_IMAGE});`
-      : `Tests failed on ${ARGO_SERVER_URL}/workflows/argo/${requestBody.workflowName} \n\n` +
-        `![Tests running](${CI_FAILED_IMAGE});`;
-
   return axios
     .post(
       `${GITEA_SERVER_URL}/api/v1/repos/${workflow.project}/issues/${workflow.pullRequestNumber}/comments`,
       {
-        body: message,
+        body:
+          requestBody.workflowStatus === "Succeeded"
+            ? `Tests succeeded on ${ARGO_SERVER_URL}/workflows/argo/${requestBody.workflowName} \n\n` +
+              `![Tests succeeded](${CI_SUCCEED_IMAGE});`
+            : `Tests failed on ${ARGO_SERVER_URL}/workflows/argo/${requestBody.workflowName} \n\n` +
+              `![Tests failed](${CI_FAILED_IMAGE});`,
       },
       {
         headers: {
@@ -210,12 +205,12 @@ function postCIResultsToPR(res, workflow, requestBody) {
       return res.status(201).end();
     })
     .catch((error) => {
-      console.log(
-        `Error occured during posting CI result comment to PR#${workflow.pullRequestNumber}`
+      console.error(
+        `Error occured during posting CI result comment to PR#${workflow.pullRequestNumber}, HTTP ${error.response.status}`
       );
-      console.log(error);
+      console.error(error.response.data);
 
-      return res.status(500).end();
+      return res.status(error.response.status).end();
     });
 }
 
@@ -224,7 +219,7 @@ async function getPullRequestNumber(project, branch) {
     `${GITEA_SERVER_URL}/api/v1/repos/${project}/pulls?state=open`,
     {
       headers: {
-        Authorization: `token ${GITEA_SERVER_URL}`,
+        Authorization: `token ${GITEA_SERVER_TOKEN}`,
       },
     }
   );
