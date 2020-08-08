@@ -29,7 +29,7 @@ app.post("/submit-workflow", (req, res) => {
 
       return sendWorkflowToArgo(res, {
         workflowTemplate,
-        sender: targetCommit.committer.username,
+        creator: targetCommit.committer.username,
         project,
         branch,
         commitHash: targetCommit.id,
@@ -40,7 +40,7 @@ app.post("/submit-workflow", (req, res) => {
 
       return sendWorkflowToArgo(res, {
         workflowTemplate,
-        sender: req.body.username,
+        creator: req.body.username,
         project,
         branch,
         commitHash: req.body.after,
@@ -56,7 +56,7 @@ app.post("/submit-workflow", (req, res) => {
 
     return sendWorkflowToArgo(res, {
       workflowTemplate,
-      sender: req.body.username,
+      creator: req.body.username,
       project,
       branch,
       commitHash: req.body.pull_request.head.sha,
@@ -85,7 +85,7 @@ app.listen(TARGET_PORT, () => console.log(`server listening on ${TARGET_PORT}`))
 function sendWorkflowToArgo(res, workflowDetails) {
   const {
     workflowTemplate,
-    sender,
+    creator,
     project,
     branch,
     commitHash,
@@ -103,9 +103,16 @@ function sendWorkflowToArgo(res, workflowDetails) {
         resourceName: workflowTemplate,
         submitOptions: {
           labels:
-            `workflows.argoproj.io/workflow-template=${workflowTemplate},workflows.argoproj.io/creator=${sender}` +
+            `workflows.argoproj.io/workflow-template=${workflowTemplate},workflows.argoproj.io/creator=${creator}` +
             `,workflows.argoproj.io/project=${projectLabel},workflows.argoproj.io/branch=${branch}` +
             `,workflows.argoproj.io/commit-hash=${commitHash},workflows.argoproj.io/event=${event}`,
+          parameters: [
+            `branch=${branch}`,
+            `creator=${creator}`,
+            `project=${project}`,
+            `commitHash=${commitHash}`,
+            `event=${event}`,
+          ],
         },
       },
       {
@@ -115,8 +122,6 @@ function sendWorkflowToArgo(res, workflowDetails) {
       }
     )
     .then(async (argoResult) => {
-      console.log(`Job #${metadata.name} submitted`);
-
       const metadata = argoResult.data.metadata;
       const workflow = Workflow.insert({
         branch,
@@ -130,11 +135,14 @@ function sendWorkflowToArgo(res, workflowDetails) {
         startAt: metadata.creationTimestamp,
       });
 
+      console.log(`Job #${metadata.name} submitted`);
+
       res.status(201).end();
 
       return postCIRunningToPR(workflow, argoResult);
     })
     .catch((error) => {
+      console.log(error);
       console.error(`Error occured during job submission, HTTP ${error.response.status}:`);
       console.error(error.response.data);
 
